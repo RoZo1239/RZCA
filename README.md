@@ -17,7 +17,7 @@ with ready-to-use `cansend` commands so you can resend them to the car.
 |-------|----------|
 | **Raw_Log** | Every frame: time / bus / ID / bytes / decoded signals. Changed bytes highlighted **yellow**; event frames highlighted **orange**. |
 | **Changes** | Only the frames where a payload byte changed vs the prior same-ID frame (the reverse-engineering view). |
-| **Events**  | Discrete state transitions (e.g. *Driver door OPENED*, *Seatbelt BUCKLED*, *Gear -> R*), each with the exact `cansend` line to replay it. |
+| **Events**  | Discrete state transitions (e.g. *Driver door OPENED*, *Seatbelt BUCKLED*, *Gear -> R*), each with the exact `cansend` line **and** the `p.can_send(...)` comma-panda call to replay it. |
 
 A plain-text raw dump (`ford_capture.raw.txt`) with all frames is written alongside.
 
@@ -59,11 +59,36 @@ In live mode, events also print to the console as they happen, e.g.:
 
 ## Resending an event
 
-Open the workbook → **Events** sheet → copy the `cansend` cell for the row you want:
+Open the workbook → **Events** sheet. Each row gives you two ready-to-use forms:
+
+**A) SocketCAN (`cansend`)** — for a Linux box with a native SocketCAN adapter
+(Canable / candleLight / USB-CAN, or a CAN hat):
 
 ```bash
-cansend can0 3B0#0100000000000000
+cansend can0 3B3#0000000000000020
 ```
+
+**B) comma panda (`p.can_send`)** — for a panda, no SocketCAN needed. Copy the
+`panda (p.can_send)` cell, or use the helper:
+
+```bash
+pip install pandacan
+python panda_replay.py 0x3B3 0000000000000020 --bus 0
+# some ECUs need the frame repeated — resend at 10 Hz for 3 s:
+python panda_replay.py 0x3B3 0000000000000020 --bus 0 --rate 10 --duration 3
+```
+
+> The panda path uses `SAFETY_ALLOUTPUT` (arbitrary transmit). Bench / stationary
+> only, and the panda must be free — stop openpilot/`boardd` first, or run from a
+> laptop with the panda plugged in.
+
+### Capturing on a comma device
+
+A comma device has no SocketCAN interface — it reaches the car through the panda
+via openpilot's `cereal` messaging. So `--live can0` does **not** run on the comma.
+Instead, dump CAN to a CSV on the device by subscribing to the `can` message, copy
+it off, and run `ford_can_debug.py --csv` on it. The `bus` column will be the
+comma's 0/1/2; check which bus your body messages (doors/locks) land on.
 
 ## Notes / options
 

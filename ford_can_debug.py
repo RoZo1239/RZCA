@@ -313,6 +313,11 @@ def cansend(channel, addr, data):
     return f"cansend {channel} {id_str}#{data.hex().upper()}"
 
 
+def panda_cmd(bus, addr, data):
+    """comma-panda equivalent of a cansend line (no SocketCAN needed)."""
+    return f'p.can_send(0x{addr:X}, bytes.fromhex("{data.hex().upper()}"), {bus})'
+
+
 def label_value(val, mapping):
     r = round(val, 3)
     iv = int(r) if float(r).is_integer() else r
@@ -366,11 +371,11 @@ class Processor:
 
         self.ws_ch = self.wb.create_sheet("Changes")
         self.ws_ch.append(["idx", "t(s)", "bus", "ID", "Changed bytes", "Prev payload",
-                           "New payload", "Decoded", "cansend (resend)"])
+                           "New payload", "Decoded", "cansend (resend)", "panda (p.can_send)"])
 
         self.ws_ev = self.wb.create_sheet("Events")
         self.ws_ev.append(["t(s)", "bus", "Event", "ID", "Message", "From", "To",
-                           "Payload", "cansend (resend to car)"])
+                           "Payload", "cansend (resend to car)", "panda (p.can_send)"])
 
         self.raw_fh = open(out_raw, "w")
         self.out_raw = out_raw
@@ -434,17 +439,21 @@ class Processor:
             self.ws_ch.append([self.idx, round(f.t, 4), f.bus, f"0x{f.addr:X}",
                                ",".join(map(str, changed)),
                                (pv or b"").hex().upper(), f.data.hex().upper(),
-                               dec_str, cansend(chan, f.addr, f.data)])
+                               dec_str, cansend(chan, f.addr, f.data),
+                               panda_cmd(f.bus, f.addr, f.data)])
 
         # ---- Events sheet (+ live console) ----
         for lbl, mname, a, b in frame_events:
             self.n_events += 1
             cmd = cansend(chan, f.addr, f.data)
+            pcmd = panda_cmd(f.bus, f.addr, f.data)
             self.ws_ev.append([round(f.t, 4), f.bus, lbl, f"0x{f.addr:X}", mname,
-                               a, b, f.data.hex().upper(), cmd])
+                               a, b, f.data.hex().upper(), cmd, pcmd])
             self.ws_ev.cell(self.ws_ev.max_row, 3).fill = self.GREEN
             if self.live:
-                print(f"[{f.t:7.2f}s] {chan}  {lbl}: {a} -> {b}   ->  {cmd}")
+                print(f"[{f.t:7.2f}s] {chan}  {lbl}: {a} -> {b}")
+                print(f"            cansend: {cmd}")
+                print(f"            panda  : {pcmd}")
 
         self.prev_payload[(f.bus, f.addr)] = f.data
         self.idx += 1
@@ -458,10 +467,12 @@ class Processor:
             sheet.freeze_panes = "A2"
         self.ws.column_dimensions["N"].width = 60
         self.ws.column_dimensions["O"].width = 34
-        self.ws_ch.column_dimensions["I"].width = 40
+        self.ws_ch.column_dimensions["I"].width = 34
+        self.ws_ch.column_dimensions["J"].width = 46
         self.ws_ev.column_dimensions["C"].width = 20
-        self.ws_ev.column_dimensions["I"].width = 34
         self.ws_ev.column_dimensions["H"].width = 20
+        self.ws_ev.column_dimensions["I"].width = 34
+        self.ws_ev.column_dimensions["J"].width = 46
 
         self.wb.save(self.out_xlsx)
         self.raw_fh.close()
